@@ -43,7 +43,9 @@ async fn main() {
     let _spotify_token = args.spotify_token;
     let _cache_location = args.cache_location; 
     //todo: also create a simple credential handler
-    let db_ctx = db::DBContext::new(_cache_location);
+    let db_ctx = db::DBContext::new(_cache_location)
+        .await
+        .expect("failed to open database");
 
     let cancel_token = CancellationToken::new();
     let cloned_token = cancel_token.clone();
@@ -55,6 +57,6 @@ async fn main() {
         cloned_token.cancel();
     });
     
-    discord::run_service(_discord_token, cancel_token).await;
+    discord::run_service(_discord_token, db_ctx,cancel_token).await;
     println!("Shutting down bot");
 }

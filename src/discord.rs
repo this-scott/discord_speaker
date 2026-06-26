@@ -3,15 +3,17 @@ use songbird::SerenityInit;
 use songbird::input::{Input};
 use tokio_util::sync::CancellationToken;
 
-use crate::auth;
+use crate::{auth, db};
 
 
 // poise command types
-struct Data {} // User data, stored and accessible in all command invocations
+struct Data {
+    db: db::DBContext,
+} // User data, stored and accessible in all command invocations
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
 
-pub async fn run_service(discord_token: String, cancel_token: CancellationToken) {
+pub async fn run_service(discord_token: String, db_ctx: db::DBContext, cancel_token: CancellationToken) {
     let intents = serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT;
 
     let framework = poise::Framework::builder()
@@ -23,7 +25,7 @@ pub async fn run_service(discord_token: String, cancel_token: CancellationToken)
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                Ok(Data {})
+                Ok(Data { db: db_ctx })
             })
         })
         .build();
@@ -62,7 +64,18 @@ async fn speaker(
 
 
     //todo(NEXT): setup spotify auth
-    auth::get_user_credential(ctx.author()).await;
+    let token = match auth::get_user_credential(&data.db, ctx.author()).await {
+        Ok(Some(token)) => token,
+        Ok(None) => {
+            ctx.say("No spotify sign in yet. Check your dms for an OAuth link").await?;
+            return Ok(());
+        }
+        Err(e) => {
+            eprintln!("DB error fetching credential: {e:?}");
+            ctx.say("Something went wrong. Try again later.").await?;
+            return Ok(());
+        }
+    };
 
     ctx.say(format!("Attempting to join channel: {:?}", channel_id)).await?;
 
@@ -88,8 +101,8 @@ async fn speaker(
 
 
         //todo(AFTER): setup librespot
-        let input = Input::from();
-        let _ = handler.play_input(input);
+        // let input = Input::from();
+        // let _ = handler.play_input(input);
 
     } else {
         ctx.say("Error: Could not get voice handler after joining!").await?;

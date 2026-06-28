@@ -27,6 +27,9 @@ struct Args {
     #[arg(short, long, env = "SPOTIFY_CLIENT_ID")]
     spotify_token: String,
 
+    #[arg(short, long, env = "SPOTIFY_CLIENT_SECRET")]
+    spotify_secret: String,
+
     #[arg(short, long, default_value_t = default_cache_location())]
     cache_location: String
 }
@@ -39,11 +42,13 @@ async fn main() {
 
     // read discord bot token, spotify app token, and .cache ALL IN ONE PLACE
     // clap guarantees these are present (flag or env var) or exits before we get here.
-    let _discord_token = args.discord_token;
-    let _spotify_token = args.spotify_token;
-    let _cache_location = args.cache_location; 
+    let discord_token = args.discord_token;
+    let spotify_token = args.spotify_token;
+    let spotify_secret = args.spotify_secret;
+    let cache_location = args.cache_location; 
     //todo: also create a simple credential handler
-    let db_ctx = db::DBContext::new(_cache_location)
+    // create auth handler in main and layer db under it
+    let auth = auth::AuthHandler::new(spotify_token, spotify_secret, cache_location)
         .await
         .expect("failed to open database");
 
@@ -57,6 +62,6 @@ async fn main() {
         cloned_token.cancel();
     });
     
-    discord::run_service(_discord_token, db_ctx,cancel_token).await;
+    discord::run_service(discord_token, auth,cancel_token).await;
     println!("Shutting down bot");
 }

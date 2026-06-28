@@ -8,12 +8,12 @@ use crate::{auth, db};
 
 // poise command types
 struct Data {
-    db: db::DBContext,
+    ah: auth::AuthHandler,
 } // User data, stored and accessible in all command invocations
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
 
-pub async fn run_service(discord_token: String, db_ctx: db::DBContext, cancel_token: CancellationToken) {
+pub async fn run_service(discord_token: String, auth: auth::AuthHandler, cancel_token: CancellationToken) {
     let intents = serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT;
 
     let framework = poise::Framework::builder()
@@ -25,7 +25,7 @@ pub async fn run_service(discord_token: String, db_ctx: db::DBContext, cancel_to
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                Ok(Data { db: db_ctx })
+                Ok(Data { ah: auth })
             })
         })
         .build();
@@ -64,7 +64,7 @@ async fn speaker(
 
 
     //todo(NEXT): setup spotify auth
-    let token = match auth::get_user_credential(&data.db, ctx.author()).await {
+    let token = match data.ah.get_user_credential(ctx.author()).await {
         Ok(Some(token)) => token,
         Ok(None) => {
             ctx.say("No spotify sign in yet. Check your dms for an OAuth link").await?;

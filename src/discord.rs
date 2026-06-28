@@ -1,19 +1,23 @@
 use poise::serenity_prelude as serenity;
+use rand::RngExt;
 use songbird::SerenityInit;
 use songbird::input::{Input};
 use tokio_util::sync::CancellationToken;
+use rand::{distr::Alphanumeric, Rng};
 
-use crate::{auth, db};
+
+use crate::{auth};
 
 
 // poise command types
 struct Data {
+    client_id: String,
     ah: auth::AuthHandler,
 } // User data, stored and accessible in all command invocations
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
 
-pub async fn run_service(discord_token: String, auth: auth::AuthHandler, cancel_token: CancellationToken) {
+pub async fn run_service(discord_token: String, client_id: String, auth: auth::AuthHandler, cancel_token: CancellationToken) {
     let intents = serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT;
 
     let framework = poise::Framework::builder()
@@ -25,7 +29,7 @@ pub async fn run_service(discord_token: String, auth: auth::AuthHandler, cancel_
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                Ok(Data { ah: auth })
+                Ok(Data { client_id: client_id, ah: auth })
             })
         })
         .build();
@@ -63,12 +67,27 @@ async fn speaker(
         .ok_or("You must be in a voice channel")?;
 
 
-    //todo(NEXT): setup spotify auth
+    // //(NEXT): setup spotify auth
+
     let token = match data.ah.get_user_credential(ctx.author()).await {
         Ok(Some(token)) => token,
         Ok(None) => {
-            ctx.say("No spotify sign in yet. Check your dms for an OAuth link").await?;
-            return Ok(());
+            ctx.say("No login credential found. Check dms for a spotify link").await?;
+            
+            let state = rand::rng().sample_iter(&Alphanumeric).take(16).map(char::from).collect();
+
+            let link = format!("https://accounts.spotify.com/authorize?reponse_type=code&client_id={}&scope=streaming&redirect_uri=speaker.scottstyslinger.com/token&state={}",data.client_id,state);
+            // create shared state id and send the link
+            ctx.author().direct_message(ctx, poise::serenity_prelude::CreateMessage::new().content(format!("Authorize with this link {link}"))).await?;
+
+            match data.ah.create_token_request(&state, ctx.author()).await {
+                Ok(token) => token,
+                Err(e) => {
+                    eprintln!("Auth creation error: {e:?}");
+                    ctx.say("No auth credential created").await?;
+                    return Ok(());
+                }
+            }
         }
         Err(e) => {
             eprintln!("DB error fetching credential: {e:?}");

@@ -1,4 +1,4 @@
-use tokio_rusqlite::{Connection, Result};
+use tokio_rusqlite::{Connection, OptionalExtension, Result};
 use chrono::{DateTime, Utc};
 #[derive(Clone)]
 pub struct DBContext {
@@ -12,6 +12,11 @@ pub(crate) struct User {
     pub(crate) token_birth: DateTime<Utc>
 }
 
+pub(crate) struct Session {
+    pub(crate) disc_name: String,
+    pub(crate) disc_id: u64,
+    pub(crate) state: String
+}
 impl DBContext {
     /// Create db connection/context to sqllite server
     pub async fn new(path: String) -> Result<Self> {
@@ -20,20 +25,27 @@ impl DBContext {
         // execute PRAGMA statements on the inner rusqlite connection via .call
         let _ = conn.call(|c| c.execute_batch(
             "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;
-             CREATE TABLE IF NOT EXISTS User (
-                 disc_id      INTEGER PRIMARY KEY,
-                 disc_name    TEXT NOT NULL,
-                 spot_token   TEXT NOT NULL,
-                 spot_refresh TEXT NOT NULL,
-                 token_birth DATETIME NOT NULL
-             );"
+                CREATE TABLE IF NOT EXISTS User (
+                    id INTEGER PRIMARY KEY,
+                    disc_id      INTEGER NOT NULL,
+                    disc_name    TEXT NOT NULL,
+                    spot_token   TEXT NOT NULL,
+                    spot_refresh TEXT NOT NULL,
+                    token_birth DATETIME NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS AuthSessions (
+                    id INTEGER PRIMARY KEY,
+                    state VARCHAR(16) NOT NULL,
+                    disc_id INTEGER NOT NULL,
+                    disc_name TEXT NOT NULL
+                );"
         )).await?;
         Ok(Self {conn})
     }
 
     /// Get a user row by discord id.
     /// Returns `Err(QueryReturnedNoRows)` if the id is not present; the caller maps that to "not found".
-    pub async fn lookup_user(&self, disc_id: u64) -> Result<User> {
+    pub async fn get_user(&self, disc_id: u64) -> Result<User> {
         let user = self.conn.call(move |conn| {
             conn.query_row(
                 "SELECT disc_name, disc_id, spot_token, spot_refresh, token_birth FROM User WHERE disc_id=?1",
@@ -55,6 +67,38 @@ impl DBContext {
         Ok(user)
     }
 
+    /// Look up an auth session by state. Returns `Ok(None)` if no matching row exists.
+    pub async fn get_session(&self, state: &String) -> Result<Option<Session>> {
+        let state = state.to_owned();
+        let session = self.conn.call(move |conn| {
+            conn.query_one(
+                "SELECT state, disc_id, disc_name FROM AuthSessions WHERE state=?1",
+                [state],
+                |row| {
+                    Ok(Session {
+                        state: row.get(0)?,
+                        disc_id: row.get(1)?,
+                        disc_name: row.get(2)?,
+                    })
+                },
+            )
+            .optional()
+        }).await?;
+
+        Ok(session)
+    }
+
+    pub async fn create_user(&self, user: User) {
+
+    }
+
+    pub async fn create_session(&self, state: &String, disc_id: u64, disc_name: String) -> Result<()> {
+        let state = state.to_owned();
+        self.conn.call( move |conn| {
+            conn.execute("INSERT INTO AuthSessions (state, disc_id, disc_name) VALUES (?1, ?2, ?3)", [state, disc_id.to_string(), disc_name])
+        }).await?;
+        Ok(())
+    }
 }
 
 

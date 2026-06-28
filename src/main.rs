@@ -48,7 +48,7 @@ async fn main() {
     let cache_location = args.cache_location; 
     //todo: also create a simple credential handler
     // create auth handler in main and layer db under it
-    let auth = auth::AuthHandler::new(spotify_token, spotify_secret, cache_location)
+    let auth = auth::AuthHandler::new(spotify_token.clone(), spotify_secret, cache_location)
         .await
         .expect("failed to open database");
 
@@ -62,6 +62,6 @@ async fn main() {
         cloned_token.cancel();
     });
     
-    discord::run_service(discord_token, auth,cancel_token).await;
+    discord::run_service(discord_token, spotify_token, auth, cancel_token).await;
     println!("Shutting down bot");
 }

@@ -1,4 +1,4 @@
-use tokio_rusqlite::{Connection, OptionalExtension, Result};
+use tokio_rusqlite::{params, Connection, OptionalExtension, Result};
 use chrono::{DateTime, Utc};
 #[derive(Clone)]
 pub struct DBContext {
@@ -88,8 +88,14 @@ impl DBContext {
         Ok(session)
     }
 
-    pub async fn create_user(&self, user: User) {
-
+    pub async fn create_user(&self, user: User) -> Result<()> {
+        self.conn.call( move |conn| {
+            conn.execute(
+                "INSERT INTO User (disc_id, disc_name, spot_token, spot_refresh, token_birth) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![user.disc_id, user.disc_name, user.spot_token, user.spot_refresh, user.token_birth.to_rfc3339()],
+            )
+        }).await?;
+        Ok(())
     }
 
     pub async fn create_session(&self, state: &String, disc_id: u64, disc_name: String) -> Result<()> {
@@ -99,6 +105,25 @@ impl DBContext {
         }).await?;
         Ok(())
     }
+
+    /// Remove auth session for callback complete.
+    pub async fn delete_session(&self, state: &String) -> Result<()> {
+        let state = state.to_owned();
+        self.conn.call( move |conn| {
+            conn.execute("DELETE FROM AuthSessions WHERE state=?1", [state])
+        }).await?;
+        Ok(())
+    }
+
+    // update user and return it's token
+    pub async fn update_user(&self, user: User) -> Result<()> {
+        self.conn.call( move |conn| {
+            conn.execute("UPDATE User SET spot_token=?1, spot_refresh=?2 WHERE disc_id=?3", params![user.spot_token,user.spot_refresh,user.disc_id])
+        }).await?;
+        Ok(())
+    }
+
+    
 }
 
 

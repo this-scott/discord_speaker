@@ -13,11 +13,12 @@ use crate::{auth};
 struct Data {
     client_id: String,
     ah: auth::AuthHandler,
+    redirect_uri: String
 } // User data, stored and accessible in all command invocations
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
 
-pub async fn run_service(discord_token: String, client_id: String, auth: auth::AuthHandler, cancel_token: CancellationToken) {
+pub async fn run_service(discord_token: String, client_id: String, auth: auth::AuthHandler, redirect_uri: String, cancel_token: CancellationToken) {
     let intents = serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT;
 
     let framework = poise::Framework::builder()
@@ -29,7 +30,7 @@ pub async fn run_service(discord_token: String, client_id: String, auth: auth::A
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                Ok(Data { client_id: client_id, ah: auth })
+                Ok(Data { client_id: client_id, ah: auth, redirect_uri: redirect_uri})
             })
         })
         .build();
@@ -76,7 +77,7 @@ async fn speaker(
             
             let state = rand::rng().sample_iter(&Alphanumeric).take(16).map(char::from).collect();
 
-            let link = format!("https://accounts.spotify.com/authorize?reponse_type=code&client_id={}&scope=streaming&redirect_uri=speaker.scottstyslinger.com/token&state={}",data.client_id,state);
+            let link = format!("https://accounts.spotify.com/authorize?response_type=code&client_id={}&scope=streaming&redirect_uri={}&state={}",data.client_id, data.redirect_uri, state);
             // create shared state id and send the link
             ctx.author().direct_message(ctx, poise::serenity_prelude::CreateMessage::new().content(format!("Authorize with this link {link}"))).await?;
 

@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 // these two are blending technically blending domain and application layer but we're so small it doesn't matter
 // Arc and Axum use Arc so they're not creating new connections when cloned
 use reqwest::{Client};
-use axum::{Router, extract::{Query, State}, routing::get};
+use axum::{Router, extract::{Query, State}, routing::get, response::Html, http::StatusCode};
 use serde::Deserialize;
 use tokio::time::{sleep};
 
@@ -156,7 +156,7 @@ impl AuthHandler {
     }
 
     // handles oauth tokens granted by idp and given to server from client
-    async fn oauth_callback(State(ctx): State<CallbackCtx>, Query(params): Query<CallbackParams>) {
+    async fn oauth_callback(State(ctx): State<CallbackCtx>, Query(params): Query<CallbackParams>) -> (StatusCode, Html<&'static str>) {
         match params {
             CallbackParams::Success { code, state } => {
                 println!("Session {state} received success code");
@@ -166,14 +166,14 @@ impl AuthHandler {
                     Ok(Some(session)) => session,
                     Ok(None) => {
                         eprintln!("Callback for state {state} but no matching session found");
-                        return
+                        return (StatusCode::NOT_FOUND, Html("<h1>Session not found</h1><p>This authorization link has expired. Please try again from Discord.</p>"));
                     }
                     Err(e) => {
                         eprintln!("DB error looking up session {state}: {e:?}");
-                        return;
+                        return (StatusCode::INTERNAL_SERVER_ERROR, Html("<h1>Something went wrong</h1><p>Please try again later.</p>"));
                     }
                 };
-                
+
                 // make request to spotify for access token
                 let mut form_data = HashMap::new();
                     form_data.insert("grant_type", "authorization_code");
@@ -188,7 +188,7 @@ impl AuthHandler {
                         Ok(response) => response,
                         Err(e) => {
                             eprintln!("Token exchange request faled for session {state}: {e:?}");
-                            return;
+                            return (StatusCode::BAD_GATEWAY, Html("<h1>Could not reach Spotify</h1><p>Please try again later.</p>"));
                         }
                     };
 
@@ -197,7 +197,7 @@ impl AuthHandler {
                     Ok(new_access_token) => new_access_token,
                     Err(e) => {
                             eprintln!("Failed to extract json: {e:?}");
-                            return;
+                            return (StatusCode::BAD_GATEWAY, Html("<h1>Unexpected response from Spotify</h1><p>Please try again later.</p>"));
                     }
                 };
                 // create user in database
@@ -212,7 +212,7 @@ impl AuthHandler {
                     Ok(()) => (),
                     Err(e) => {
                         eprintln!("Failed to create db object for session {state}: {e:?}");
-                        return;
+                        return (StatusCode::INTERNAL_SERVER_ERROR, Html("<h1>Auth save error</h1><p>Please try again later.</p>"));
                     }
                 };
 
@@ -220,9 +220,12 @@ impl AuthHandler {
                 if let Err(e) = ctx.db_ctx.delete_session(&state).await {
                     eprintln!("Failed to clear session {state} after auth: {e:?}");
                 }
+
+                (StatusCode::OK, Html("<h1>Success</h1><p>Spotify is linked. Close this tab and head into spotify.</p>"))
             }
             CallbackParams::Failure { error, state } => {
-                eprintln!("Session {state} failed to authorize: {error:?}")
+                eprintln!("Session {state} failed to authorize: {error:?}");
+                (StatusCode::BAD_REQUEST, Html("<h1>Cancelled</h1><p>Close this tab and try again from Discord.</p>"))
             }
         }
     }

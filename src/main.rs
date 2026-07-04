@@ -74,9 +74,9 @@ async fn main() {
 
     // Oauth callback listener. Bind on the main task so a port conflict fails fast
     let callback_router = auth.router();
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:8000")
+    let listener = tokio::net::TcpListener::bind(redirect_uri)
         .await
-        .expect("failed to bind callback listener on 127.0.0.1:8000");
+        .unwrap_or_else(|err| panic!("failed to bind callback listener on {}: {}", redirect_uri, err));
     tokio::spawn(async move {
         axum::serve(listener, callback_router)
             .await
@@ -84,7 +84,7 @@ async fn main() {
     });
 
     let cancel_token = CancellationToken::new();
-    let cloned_token = cancel_token.clone();
+    let cloned_token: CancellationToken = cancel_token.clone();
 
     // Spawn close signal handler, lives in background
     tokio::spawn(async move {

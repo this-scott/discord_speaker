@@ -121,7 +121,7 @@ async fn speaker(
 
 
         //todo: setup librespot
-        // the old version of this spawned an entire child process. I might try tokio spawn this time
+        
         // let input = Input::from();
         // let _ = handler.play_input(input);
 

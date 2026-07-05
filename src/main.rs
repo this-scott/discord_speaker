@@ -43,7 +43,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
-    println!("Hello, world!");
+    println!("Starting discord_speaker");
 
     // rustls decides tls framework
     rustls::crypto::aws_lc_rs::default_provider()

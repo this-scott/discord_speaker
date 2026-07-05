@@ -15,8 +15,9 @@ use std::sync::mpsc as std_mpsc;
 use tokio_util::sync::CancellationToken;
 
 // reminder: cancellation token
-/// play spirc stream using provided token. Pipes back to discord module
-pub async fn play_stream(access_token: String, cancel_token: CancellationToken) -> Result<ChannelReader, Error> {
+/// play spirc stream using provided token. Pipes back to discord module.
+/// Returns the Spirc handle alongside the reader so callers can stop/disconnect the device later.
+pub async fn play_stream(access_token: String, cancel_token: CancellationToken) -> Result<(Spirc, ChannelReader), Error> {
     //stream channel
     let (tx, rx) = std_mpsc::sync_channel::<Bytes>(64);
     
@@ -37,7 +38,7 @@ pub async fn play_stream(access_token: String, cancel_token: CancellationToken) 
     let mixer = mixer_builder(MixerConfig::default())?;
 
     // runs the session
-    let (_, spirc_task) = Spirc::new(
+    let (spirc, spirc_task) = Spirc::new(
         // ConnectConfig is where we name the session. Rebuild custom later
         ConnectConfig::default(),
         session,
@@ -45,8 +46,11 @@ pub async fn play_stream(access_token: String, cancel_token: CancellationToken) 
         player,
         mixer
     ).await?;
+
+    spirc.activate()?;
+
     tokio::spawn(spirc_task);
-    Ok(ChannelReader::new(rx))
+    Ok((spirc, ChannelReader::new(rx)))
 }
 
 /// Custom audio_backend for allowing audio stream to be returned as a function output 
@@ -55,11 +59,11 @@ pub struct ParentSink {
 }
 
 impl Sink for ParentSink {
-    // writes the stream to unsigned 8 byte pcm packets
+    // songbird's RawAdapter expects interleaved little-endian f32 PCM, so emit f32 (not s16).
     fn write(&mut self, packet: AudioPacket, converter: &mut Converter) -> SinkResult<()> {
         let samples = packet.samples().map_err(|e| SinkError::OnWrite(e.to_string()))?;
         let bytes: Vec<u8> = converter
-            .f64_to_s16(samples)
+            .f64_to_f32(samples)
             .iter()
             .flat_map(|s| s.to_le_bytes())
             .collect();
@@ -80,24 +84,45 @@ impl ParentSink {
     }
 }
 
-/// Wrapping a std async mpsc receiver into std::io::Read to feed into mss. 
+/// Wrapping a std async mpsc receiver into std::io::Read to feed into mss.
 pub struct ChannelReader {
     rx: std::sync::Mutex<std_mpsc::Receiver<Bytes>>,
-    leftover: Bytes
+    leftover: Bytes,
+    // DIAGNOSTIC: log the first read so we can see if songbird ever consumes this reader.
+    read_seen: bool
 }
 
 impl ChannelReader {
     pub fn new(rx: std_mpsc::Receiver<Bytes>) -> Self {
-        Self {rx: std::sync::Mutex::new(rx), leftover: Bytes::new()}
+        Self {rx: std::sync::Mutex::new(rx), leftover: Bytes::new(), read_seen: false}
+    }
+}
+
+// DIAGNOSTIC: pinpoint exactly when the receiver dies relative to the Spotify Play command.
+impl Drop for ChannelReader {
+    fn drop(&mut self) {
+        eprintln!("[diag] ChannelReader dropped (songbird released the audio stream)");
     }
 }
 
 impl Read for ChannelReader {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        // TEMP DIAGNOSTIC: confirm songbird actually starts pulling from this reader.
+        if !self.read_seen {
+            self.read_seen = true;
+            eprintln!("[diag] ChannelReader: first read() call (songbird is consuming the stream)");
+        }
         if self.leftover.is_empty() {
-            match self.rx.lock().unwrap().recv() {
+            match self.rx.lock().unwrap().try_recv() {
                 Ok(chunk) => self.leftover = chunk,
-                Err(_) => return Ok(0) //end of file
+                // no audio yet (or a momentary gap): fill the buffer with silence and keep going.
+                Err(std_mpsc::TryRecvError::Empty) => {
+                    // f32 PCM silence is all-zero bytes, so a zeroed buffer is a valid silent frame.
+                    buf.fill(0);
+                    return Ok(buf.len());
+                }
+                // every sender is gone — the player has shut down, so the stream is truly over.
+                Err(std_mpsc::TryRecvError::Disconnected) => return Ok(0),
             }
         }
 

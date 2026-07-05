@@ -43,7 +43,8 @@ struct CallbackCtx {
 #[derive(Deserialize, Debug)]
 struct ExchangeResponse {
     access_token: String,
-    refresh_token: String
+    // Refresh tokens don't refresh so I need to keep them and expect them not to appear after first exchange
+    refresh_token: Option<String>
 }
 
 impl AuthHandler {
@@ -138,11 +139,13 @@ impl AuthHandler {
         // create user in database
         let disc_name = user.disc_name.clone();
         let access_token = new_access_token.access_token.clone();
+        // handling optional refresh token 
+        let spot_refresh = new_access_token.refresh_token.unwrap_or(user.spot_refresh);
         let user = db::User {
             disc_id: user.disc_id,
             disc_name: user.disc_name,
             spot_token: new_access_token.access_token,
-            spot_refresh: new_access_token.refresh_token,
+            spot_refresh,
             token_birth: Utc::now()
         };
         match self.db_ctx.update_user(user).await {
@@ -200,12 +203,21 @@ impl AuthHandler {
                             return (StatusCode::BAD_GATEWAY, Html("<h1>Unexpected response from Spotify</h1><p>Please try again later.</p>"));
                     }
                 };
+
+                let spot_refresh = match new_access_token.refresh_token {
+                    Some(spot_refresh) => spot_refresh,
+                    None => {
+                        eprintln!("Spotify returned no refresh_token for session {state}");
+                        return (StatusCode::BAD_GATEWAY, Html("<h1>Unexpected response from Spotify</h1><p>Please try again later.</p>"));
+                    }
+                };
+
                 // create user in database
                 let user = db::User {
                     disc_id: session.disc_id,
                     disc_name: session.disc_name,
                     spot_token: new_access_token.access_token,
-                    spot_refresh: new_access_token.refresh_token,
+                    spot_refresh,
                     token_birth: Utc::now()
                 };
                 match ctx.db_ctx.create_user(user).await {

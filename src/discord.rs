@@ -1,8 +1,13 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+
 use poise::serenity_prelude as serenity;
+use librespot_connect::Spirc;
 use rand::RngExt;
 use songbird::SerenityInit;
 use songbird::input::core::io::{MediaSourceStream, ReadOnlySource};
 use songbird::input::{Input, RawAdapter};
+use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use rand::{distr::Alphanumeric, Rng};
 
@@ -10,11 +15,30 @@ use rand::{distr::Alphanumeric, Rng};
 use crate::{auth, spotify};
 
 
+/// Live Spirc handles keyed by guild, so end_speaker can stop the device that speaker started.
+type SpircSessions = Arc<Mutex<HashMap<serenity::GuildId, Spirc>>>;
+
+// TEMP DIAGNOSTIC: finding play errors the exact PlayError songbird hits while readying our audio input.
+struct TrackErrLogger;
+
+#[serenity::async_trait]
+impl songbird::EventHandler for TrackErrLogger {
+    async fn act(&self, ctx: &songbird::EventContext<'_>) -> Option<songbird::Event> {
+        if let songbird::EventContext::Track(states) = ctx {
+            for (state, _) in *states {
+                eprintln!("[diag] songbird track state: {:?}", state.playing);
+            }
+        }
+        None
+    }
+}
+
 // poise command types
 struct Data {
     client_id: String,
     ah: auth::AuthHandler,
-    redirect_uri: String
+    redirect_uri: String,
+    spirc_sessions: SpircSessions
 } // User data, stored and accessible in all command invocations
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
@@ -31,7 +55,7 @@ pub async fn run_service(discord_token: String, client_id: String, auth: auth::A
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                Ok(Data { client_id: client_id, ah: auth, redirect_uri: redirect_uri})
+                Ok(Data { client_id: client_id, ah: auth, redirect_uri: redirect_uri, spirc_sessions: Arc::new(Mutex::new(HashMap::new()))})
             })
         })
         .build();
@@ -124,15 +148,23 @@ async fn speaker(
         let cancel_token = CancellationToken::new();
         let cloned_token: CancellationToken = cancel_token.clone();
 
-        let stream = spotify::play_stream(token, cancel_token).await.unwrap();
+        let (spirc, stream) = spotify::play_stream(token, cancel_token).await.unwrap();
+
+        // hold the handle so end_speaker can later stop/disconnect this guild's device
+        data.spirc_sessions.lock().await.insert(guild_id, spirc);
 
         // MSS only accepts sync sources
         let mss = MediaSourceStream::new(Box::new(ReadOnlySource::new(stream)), Default::default());
         let source = RawAdapter::new(mss, 44100, 2);
-        
+
 
         let input = Input::from(source);
-        let _ = handler.play_input(input);
+        let track = handler.play_input(input);
+        // TEMP DIAGNOSTIC: print the real PlayError when songbird errors the track during prepare.
+        let _ = track.add_event(
+            songbird::Event::Track(songbird::TrackEvent::Error),
+            TrackErrLogger,
+        );
 
     } else {
         ctx.say("Error: Could not get voice handler after joining!").await?;
@@ -145,5 +177,21 @@ async fn speaker(
 async fn end_speaker(
     ctx: Context<'_>
 ) -> Result<(), Error> {
+    let data = ctx.data();
+    let guild_id = ctx.guild_id().ok_or("This command must be used in a guild")?;
+
+    // pull the handle for this guild; if there isn't one, nothing is playing
+    let spirc = match data.spirc_sessions.lock().await.remove(&guild_id) {
+        Some(spirc) => spirc,
+        None => {
+            ctx.say("Nothing is playing here.").await?;
+            return Ok(());
+        }
+    };
+
+    // TODO: stop/disconnect the Spirc device (e.g. spirc.shutdown()) using `spirc`
+    // TODO: leave the voice channel via songbird
+    let _ = spirc;
+
     Ok(())
 }

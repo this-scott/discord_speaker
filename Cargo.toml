@@ -9,6 +9,9 @@ chrono = "0.4.45"
 clap = { version = "4.6.1", features = ["derive", "env"] }
 directories = "6.0.0"
 librespot = "0.8.0"
+librespot-connect = "0.8.0"
+librespot-core = "0.8.0"
+librespot-playback = "0.8.0"
 poise = "0.6.2"
 rand = "0.10.1"
 reqwest = { version = "0.13.4", features = ["form", "json"] }
@@ -17,5 +20,11 @@ serde = "1.0.228"
 serenity = "0.12.5"
 songbird = "0.6.0"
 tokio = { version = "1.52.3", features = ["full"] }
-tokio-rusqlite = "0.7.0"
+tokio-rusqlite = { version = "0.7.0", features = ["bundled"] }
 tokio-util = "0.7.18"
+vergen-gitcl = "=1.0.8"
+vergen = "=9.0.6"
+vergen-lib = "=0.1.6"
+futures = "0.3.32"
+tokio-stream = "0.1.18"
+symphonia = "0.6.0"

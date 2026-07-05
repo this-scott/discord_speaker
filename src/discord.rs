@@ -1,12 +1,13 @@
 use poise::serenity_prelude as serenity;
 use rand::RngExt;
 use songbird::SerenityInit;
-use songbird::input::{Input};
+use songbird::input::core::io::{MediaSourceStream, ReadOnlySource};
+use songbird::input::{Input, RawAdapter};
 use tokio_util::sync::CancellationToken;
 use rand::{distr::Alphanumeric, Rng};
 
 
-use crate::{auth};
+use crate::{auth, spotify};
 
 
 // poise command types
@@ -117,13 +118,21 @@ async fn speaker(
 
     // check current contexts guild and creates a guard 
     if let Some(handler_lock) = sb_context.get(guild_id) {
-        let handler = handler_lock.lock().await;
+        let mut handler = handler_lock.lock().await;
 
+        // I think I might need to sit this and stream in poise data so end_speaker commands can work but let's try this for now
+        let cancel_token = CancellationToken::new();
+        let cloned_token: CancellationToken = cancel_token.clone();
 
-        //todo: setup librespot
+        let stream = spotify::play_stream(token, cancel_token).await.unwrap();
+
+        // MSS only accepts sync sources
+        let mss = MediaSourceStream::new(Box::new(ReadOnlySource::new(stream)), Default::default());
+        let source = RawAdapter::new(mss, 44100, 2);
         
-        // let input = Input::from();
-        // let _ = handler.play_input(input);
+
+        let input = Input::from(source);
+        let _ = handler.play_input(input);
 
     } else {
         ctx.say("Error: Could not get voice handler after joining!").await?;

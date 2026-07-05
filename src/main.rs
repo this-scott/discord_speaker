@@ -74,7 +74,7 @@ async fn main() {
 
     // Oauth callback listener. Bind on the main task so a port conflict fails fast
     let callback_router = auth.router();
-    let listener = tokio::net::TcpListener::bind(redirect_uri)
+    let listener = tokio::net::TcpListener::bind(redirect_uri.clone())
         .await
         .unwrap_or_else(|err| panic!("failed to bind callback listener on {}: {}", redirect_uri, err));
     tokio::spawn(async move {

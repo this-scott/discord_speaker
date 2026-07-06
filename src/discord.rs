@@ -40,7 +40,7 @@ struct VoiceStateTracker {
     spirc_tracker: SpircSessions
 
 }
-
+// todo: follow user into new voice channels
 #[serenity::async_trait]
 impl serenity::EventHandler for VoiceStateTracker {
     async fn voice_state_update(&self, ctx: serenity::Context, old: Option<serenity::VoiceState>, new: serenity::VoiceState) {

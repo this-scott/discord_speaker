@@ -1,6 +1,8 @@
 use clap::Parser;
 use directories::ProjectDirs;
 use tokio_util::sync::CancellationToken;
+use std::fs;
+use std::path::Path;
 
 mod discord;
 mod spotify;
@@ -60,10 +62,14 @@ async fn main() {
     let cache_location = args.cache_location;
     let redirect_uri = args.redirect_uri;
 
+    let cache_path = Path::new(&cache_location);
+    if let Some(parent) = cache_path.parent() {
+        fs::create_dir_all(parent).expect("failed to create cache directory");
+    }
+
     // --new wipes the existing cache db so it's rebuilt with the current schema
-    if args.new && std::path::Path::new(&cache_location).exists() {
-        std::fs::remove_file(&cache_location)
-            .expect("failed to remove existing cache");
+    if args.new && cache_path.exists() {
+        fs::remove_file(cache_path).expect("failed to remove existing cache");
         println!("Removed existing cache at {cache_location}");
     }
 

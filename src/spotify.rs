@@ -14,10 +14,9 @@ use std::io::{self, Read};
 use std::sync::mpsc as std_mpsc;
 use tokio_util::sync::CancellationToken;
 
-// reminder: cancellation token
 /// play spirc stream using provided token. Pipes back to discord module.
 /// Returns the Spirc handle alongside the reader so callers can stop/disconnect the device later.
-pub async fn play_stream(access_token: String, cancel_token: CancellationToken) -> Result<(Spirc, ChannelReader), Error> {
+pub async fn play_stream(access_token: String) -> Result<(Spirc, ChannelReader), Error> {
     //stream channel
     let (tx, rx) = std_mpsc::sync_channel::<Bytes>(64);
     
@@ -49,6 +48,7 @@ pub async fn play_stream(access_token: String, cancel_token: CancellationToken) 
 
     spirc.activate()?;
 
+    // this returns the spirc object and stream then the function ends and spirc lives in discord
     tokio::spawn(spirc_task);
     Ok((spirc, ChannelReader::new(rx)))
 }

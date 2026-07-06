@@ -9,7 +9,7 @@ use songbird::input::core::io::{MediaSourceStream, ReadOnlySource};
 use songbird::input::{Input, RawAdapter};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
-use rand::{distr::Alphanumeric, Rng};
+use rand::{distr::Alphanumeric};
 
 
 use crate::{auth, spotify};
@@ -33,18 +33,74 @@ impl songbird::EventHandler for TrackErrLogger {
     }
 }
 
+type ActiveUsers = Arc<Mutex<HashMap<serenity::UserId, serenity::ChannelId>>>;
+
+struct VoiceStateTracker {
+    tracker: ActiveUsers,
+    spirc_tracker: SpircSessions
+
+}
+
+#[serenity::async_trait]
+impl serenity::EventHandler for VoiceStateTracker {
+    async fn voice_state_update(&self, ctx: serenity::Context, old: Option<serenity::VoiceState>, new: serenity::VoiceState) {
+        let mut tracked = self.tracker.lock().await;
+
+        // only act on users we're actually watching
+        if !tracked.contains_key(&new.user_id) {
+            return;
+        }
+
+        let left_channel = old.as_ref().and_then(|vs| vs.channel_id).filter(|old_ch| new.channel_id.as_ref() != Some(old_ch));
+
+        if let Some(old_channel_id) = left_channel {
+            println!("[diag] tracked user {:?} left {:?}", new.user_id, old_channel_id);
+
+            let Some(guild_id) = new.guild_id else {
+                tracked.remove(&new.user_id);
+                return;
+            };
+
+            // end spirc
+            if let Some(spirc) = self.spirc_tracker.lock().await.remove(&guild_id) {
+                if let Err(e) = spirc.shutdown() {
+                    eprintln!("[diag] error shutting down spirc: {e:?}");
+                }
+            }
+
+            // end voice connection
+            let session = songbird::get(&ctx).await
+                .expect("Voice session expected")
+                .clone();
+            if let Err(e) = session.remove(guild_id).await {
+                eprintln!("[diag] error leaving voice channel: {e:?}");
+            }
+
+            // remove from tracking list
+            tracked.remove(&new.user_id);
+        }
+    }
+} 
+
 // poise command types
 struct Data {
     client_id: String,
     ah: auth::AuthHandler,
     redirect_uri: String,
-    spirc_sessions: SpircSessions
+    spirc_sessions: SpircSessions,
+    active_users: ActiveUsers
 } // User data, stored and accessible in all command invocations
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Context<'a> = poise::Context<'a, Data, Error>;
 
 pub async fn run_service(discord_token: String, client_id: String, auth: auth::AuthHandler, redirect_uri: String, cancel_token: CancellationToken) {
     let intents = serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT;
+
+    let active_users: ActiveUsers =  Arc::new(Mutex::new(HashMap::new()));
+    let tracker_handle = active_users.clone();
+
+    let spirc_sessions: SpircSessions =  Arc::new(Mutex::new(HashMap::new()));
+    let spirc_tracker = spirc_sessions.clone();
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
@@ -55,13 +111,14 @@ pub async fn run_service(discord_token: String, client_id: String, auth: auth::A
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                Ok(Data { client_id: client_id, ah: auth, redirect_uri: redirect_uri, spirc_sessions: Arc::new(Mutex::new(HashMap::new()))})
+                Ok(Data { client_id: client_id, ah: auth, redirect_uri: redirect_uri, spirc_sessions: spirc_sessions, active_users: active_users})
             })
         })
         .build();
 
     let mut client = serenity::ClientBuilder::new(discord_token, intents)
         .framework(framework)
+        .event_handler(VoiceStateTracker { tracker: tracker_handle, spirc_tracker: spirc_tracker })
         .register_songbird()
         .await
         .unwrap();
@@ -79,8 +136,8 @@ pub async fn run_service(discord_token: String, client_id: String, auth: auth::A
         }
     }
 }
-// lowkey gonna throw the commands here
 
+// todo: handle duplicate calls to channel
 #[poise::command(slash_command)]
 async fn speaker(
     ctx: Context<'_>
@@ -92,9 +149,11 @@ async fn speaker(
         .and_then(|vs| vs.channel_id)
         .ok_or("You must be in a voice channel")?;
 
+    if data.spirc_sessions.lock().await.contains_key(&guild_id) {
+        return Err("Session already active".into());
+    }
 
-    // //(NEXT): setup spotify auth
-
+    // spotify auth
     let token = match data.ah.get_user_credential(ctx.author()).await {
         Ok(Some(token)) => token,
         Ok(None) => {
@@ -133,6 +192,7 @@ async fn speaker(
     match sb_context.join(guild_id, channel_id).await {
         Ok(_) => {
             ctx.say("Successfully joined channel!").await?;
+            data.active_users.lock().await.insert(ctx.author().id, channel_id);
         }
         Err(e) => {
             ctx.say(format!("Failed to join: {:?}", e)).await?;
@@ -144,11 +204,8 @@ async fn speaker(
     if let Some(handler_lock) = sb_context.get(guild_id) {
         let mut handler = handler_lock.lock().await;
 
-        // I think I might need to sit this and stream in poise data so end_speaker commands can work but let's try this for now
-        let cancel_token = CancellationToken::new();
-        let cloned_token: CancellationToken = cancel_token.clone();
-
-        let (spirc, stream) = spotify::play_stream(token, cancel_token).await.unwrap();
+        // create the spirc session and stream object
+        let (spirc, stream) = spotify::play_stream(token).await.unwrap();
 
         // hold the handle so end_speaker can later stop/disconnect this guild's device
         data.spirc_sessions.lock().await.insert(guild_id, spirc);
@@ -156,7 +213,6 @@ async fn speaker(
         // MSS only accepts sync sources
         let mss = MediaSourceStream::new(Box::new(ReadOnlySource::new(stream)), Default::default());
         let source = RawAdapter::new(mss, 44100, 2);
-
 
         let input = Input::from(source);
         let track = handler.play_input(input);
@@ -189,8 +245,15 @@ async fn end_speaker(
         }
     };
 
-    // TODO: stop/disconnect the Spirc device (e.g. spirc.shutdown()) using `spirc`
-    // TODO: leave the voice channel via songbird
+    // stop/disconnect the Spirc device
+    spirc.shutdown()?;
+    // Leave the voice channel
+    let session = songbird::get(ctx.serenity_context()).await
+        .expect("Voice session expected")
+        .clone();
+    session.remove(guild_id).await?;
+    ctx.say("Disconnected").await?;
+
     let _ = spirc;
 
     Ok(())

@@ -3,7 +3,7 @@ use librespot_connect::{ConnectConfig, Spirc};
 use librespot_core::{authentication::Credentials, Error, Session, SessionConfig};
 use librespot_playback::{
     audio_backend::{Sink, SinkAsBytes, SinkResult, SinkError},
-    config::{AudioFormat, PlayerConfig},
+    config::{PlayerConfig},
     mixer,
     mixer::{NoOpVolume, MixerConfig},
     player::Player,
@@ -12,7 +12,6 @@ use librespot_playback::{
 };
 use std::io::{self, Read};
 use std::sync::mpsc as std_mpsc;
-use tokio_util::sync::CancellationToken;
 
 /// play spirc stream using provided token. Pipes back to discord module.
 /// Returns the Spirc handle alongside the reader so callers can stop/disconnect the device later.

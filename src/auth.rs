@@ -1,7 +1,7 @@
 use std::{collections::HashMap, time::Duration};
 
-use crate::db::{self, User};
-use chrono::{DateTime, Utc};
+use crate::db::{self};
+use chrono::{Utc};
 // these two are blending technically blending domain and application layer but we're so small it doesn't matter
 // Arc and Axum use Arc so they're not creating new connections when cloned
 use reqwest::{Client};

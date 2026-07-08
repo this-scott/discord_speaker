@@ -40,6 +40,7 @@ struct VoiceStateTracker {
     spirc_tracker: SpircSessions
 
 }
+
 // todo: follow user into new voice channels
 #[serenity::async_trait]
 impl serenity::EventHandler for VoiceStateTracker {
@@ -137,7 +138,6 @@ pub async fn run_service(discord_token: String, client_id: String, auth: auth::A
     }
 }
 
-// todo: handle duplicate calls to channel
 #[poise::command(slash_command)]
 async fn speaker(
     ctx: Context<'_>

@@ -126,6 +126,4 @@ impl DBContext {
     
 }
 
-
-
 //todo: add a rotate function to remove the last used key after a certain limit(25)

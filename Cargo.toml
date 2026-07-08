@@ -1,5 +1,5 @@
 [package]
-name = "discord_spotify_speaker"
+name = "discord_spot_speaker"
 version = "0.1.0"
 edition = "2024"
 
@@ -8,10 +8,9 @@ axum = "0.8.9"
 chrono = "0.4.45"
 clap = { version = "4.6.1", features = ["derive", "env"] }
 directories = "6.0.0"
-librespot = "0.8.0"
 librespot-connect = "0.8.0"
 librespot-core = "0.8.0"
-librespot-playback = "0.8.0"
+librespot-playback = { version = "0.8.0", default-features = false }
 poise = "0.6.2"
 rand = "0.10.1"
 reqwest = { version = "0.13.4", features = ["form", "json"] }
@@ -22,11 +21,3 @@ songbird = "0.6.0"
 tokio = { version = "1.52.3", features = ["full"] }
 tokio-rusqlite = { version = "0.7.0", features = ["bundled"] }
 tokio-util = "0.7.18"
-vergen-gitcl = "=1.0.8"
-vergen = "=9.0.6"
-vergen-lib = "=0.1.6"
-futures = "0.3.32"
-tokio-stream = "0.1.18"
-symphonia = { version = "0.5", default-features = false, features = ["pcm"] }
-env_logger = "0.11.11"
-log = "0.4.33"

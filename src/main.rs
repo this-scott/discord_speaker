@@ -38,6 +38,9 @@ struct Args {
     #[arg(short, long, env = "REDIRECT_URI")]
     redirect_uri: String,
 
+    #[arg(short, long, env = "BIND_ADDR")]
+    bind_addr: String,
+
     /// Wipe user cache
     #[arg(short = 'n', long)]
     new: bool,
@@ -61,6 +64,7 @@ async fn main() {
     let spotify_secret = args.spotify_secret;
     let cache_location = args.cache_location;
     let redirect_uri = args.redirect_uri;
+    let bind_addr = args.bind_addr;
 
     let cache_path = Path::new(&cache_location);
     if let Some(parent) = cache_path.parent() {
@@ -80,9 +84,9 @@ async fn main() {
 
     // Oauth callback listener. Bind on the main task so a port conflict fails fast
     let callback_router = auth.router();
-    let listener = tokio::net::TcpListener::bind(redirect_uri.clone())
+    let listener = tokio::net::TcpListener::bind(bind_addr.clone())
         .await
-        .unwrap_or_else(|err| panic!("failed to bind callback listener on {}: {}", redirect_uri, err));
+        .unwrap_or_else(|err| panic!("failed to bind callback listener on {}: {}", bind_addr, err));
     tokio::spawn(async move {
         axum::serve(listener, callback_router)
             .await

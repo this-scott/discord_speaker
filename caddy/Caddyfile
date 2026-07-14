@@ -1,1 +1,3 @@
-{$REDIRECT_URI}
+{$REDIRECT_URI} {
+    reverse_proxy speaker:3000
+}

@@ -12,16 +12,11 @@ sudo systemctl enable docker
 # let's us run docker commands without sudo
 sudo usermod -aG docker ec2-user
 
-# the dnf docker package ships the engine only — install the Compose v2 plugin (arm64)
+# the dnf docker package ships the engine only
 sudo mkdir -p /usr/libexec/docker/cli-plugins
 sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-aarch64 \
   -o /usr/libexec/docker/cli-plugins/docker-compose
 sudo chmod +x /usr/libexec/docker/cli-plugins/docker-compose
-
-# Didn't realize build was seperate from compose and docker
-sudo curl -SL "https://github.com/docker/buildx/releases/download/v0.19.3/buildx-v0.19.3.linux-arm64" \
-  -o /usr/libexec/docker/cli-plugins/docker-buildx
-sudo chmod +x /usr/libexec/docker/cli-plugins/docker-buildx
 
 cd /home/ec2-user
 sudo -u ec2-user git clone https://github.com/this-scott/discord_speaker.git

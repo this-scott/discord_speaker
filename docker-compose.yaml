@@ -1,6 +1,6 @@
 services:
   speaker:
-    build: .
+    image: thisscott/discord_speaker:latest
     container_name: discord_spot_speaker
     expose:
       - "3000"

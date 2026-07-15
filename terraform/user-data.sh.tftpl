@@ -1,0 +1,41 @@
+#!/bin/bash
+# deploying on a t4g.nano
+
+sudo dnf install git -y
+
+# let's not include docker on our $3/mo instances because 
+sudo dnf update -y
+sudo dnf install -y docker
+
+sudo systemctl start docker
+sudo systemctl enable docker
+# let's us run docker commands without sudo
+sudo usermod -aG docker ec2-user
+
+# the dnf docker package ships the engine only — install the Compose v2 plugin (arm64)
+sudo mkdir -p /usr/libexec/docker/cli-plugins
+sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-aarch64 \
+  -o /usr/libexec/docker/cli-plugins/docker-compose
+sudo chmod +x /usr/libexec/docker/cli-plugins/docker-compose
+
+# Didn't realize build was seperate from compose and docker
+sudo curl -SL "https://github.com/docker/buildx/releases/download/v0.19.3/buildx-v0.19.3.linux-arm64" \
+  -o /usr/libexec/docker/cli-plugins/docker-buildx
+sudo chmod +x /usr/libexec/docker/cli-plugins/docker-buildx
+
+cd /home/ec2-user
+sudo -u ec2-user git clone https://github.com/this-scott/discord_speaker.git
+
+cat > /home/ec2-user/discord_speaker/.env <<'EOF'
+DISCORD_TOKEN=${discord_token}
+SPOTIFY_CLIENT_ID=${spotify_client_id}
+SPOTIFY_CLIENT_SECRET=${spotify_client_secret}
+REDIRECT_URI=${redirect_uri}
+BIND_ADDR=${bind_addr}
+EOF
+
+chown ec2-user:ec2-user /home/ec2-user/discord_speaker/.env
+chmod 600 /home/ec2-user/discord_speaker/.env
+
+cd /home/ec2-user/discord_speaker
+docker compose up --build -d

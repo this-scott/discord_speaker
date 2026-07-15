@@ -1,0 +1,5 @@
+discord_token=""
+spotify_client_id=""
+spotify_client_secret=""
+redirect_uri=""
+bind_addr=""

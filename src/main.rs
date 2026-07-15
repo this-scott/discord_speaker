@@ -63,7 +63,8 @@ async fn main() {
     let spotify_token = args.spotify_token;
     let spotify_secret = args.spotify_secret;
     let cache_location = args.cache_location;
-    let redirect_uri = args.redirect_uri;
+    // Env holds the bare host (Caddy uses it as-is); the app owns the /token callback path
+    let redirect_uri = format!("{}/token", args.redirect_uri.trim_end_matches('/'));
     let bind_addr = args.bind_addr;
 
     let cache_path = Path::new(&cache_location);

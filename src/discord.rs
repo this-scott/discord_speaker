@@ -205,7 +205,13 @@ async fn speaker(
         let mut handler = handler_lock.lock().await;
 
         // create the spirc session and stream object
-        let (spirc, stream) = spotify::play_stream(token).await.unwrap();
+        let (spirc, stream) = match spotify::play_stream(token).await {
+            Ok(pair) => pair,
+            Err(e) => {
+                ctx.say(format!("Failed to start Spotify session: {:?}", e)).await?;
+                return Ok(());
+            }
+        };
 
         // hold the handle so end_speaker can later stop/disconnect this guild's device
         data.spirc_sessions.lock().await.insert(guild_id, spirc);

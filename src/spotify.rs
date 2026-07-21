@@ -35,10 +35,19 @@ pub async fn play_stream(access_token: String) -> Result<(Spirc, ChannelReader),
     let mixer_builder = mixer::find(None).unwrap();
     let mixer = mixer_builder(MixerConfig::default())?;
 
+    let config = ConnectConfig {
+        name: "Discord".to_owned(),
+        // gives us a cool icon I hope
+        device_type: librespot_core::config::DeviceType::GameConsole,
+        is_group: false,
+        initial_volume: u16::MAX/2,
+        disable_volume: false,
+        volume_steps: 64
+    };
+    
     // runs the session
     let (spirc, spirc_task) = Spirc::new(
-        // ConnectConfig is where we name the session. Rebuild custom later
-        ConnectConfig::default(),
+        config,
         session,
         credentials,
         player,

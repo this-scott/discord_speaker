@@ -17,6 +17,10 @@ docker run -d thisscott/discord_speaker ---env-file ./path/to/.env
 ```
 
 I've also added a terraform + docker compose config mirroring my own setup. Caddy makes it tls secure and the t4g.nano only costs $3/mo
+
+There's also a release for Linux x64.
+Windows users need to build from source.
+
 ## Usage
 Commands:
 - `/speaker` 
